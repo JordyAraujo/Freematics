@@ -180,7 +180,7 @@ bool TeleClientUDP::notify(byte event, const char* payload)
       // error sending data
       break;
     }
-#if NET_DEVICE != NET_SERIAL
+#if NET_DEVICE != NET_SERIAL && NET_DEVICE != NET_WIFI_MESH
     if (event == EVENT_ACK) return true; // no reply for ACK
     char *data = 0;
     // receive reply
@@ -245,7 +245,7 @@ bool TeleClientUDP::connect()
     Serial.println(")...");
     if (!net.open(SERVER_HOST, SERVER_PORT)) {
       Serial.println("Unable to connect");
-      delay(3000);
+      delay(1000);
       continue;
     }
     // log in or reconnect to Freematics Hub
@@ -278,14 +278,14 @@ bool TeleClientUDP::ping()
 
 bool TeleClientUDP::transmit(const char* packetBuffer, unsigned int packetSize)
 {
-  bool success = false;
+  inbound();
   // transmit data
   if (net.send(packetBuffer, packetSize)) {
     txBytes += packetSize;
     txCount++;
-    success = true;
+    return true;
   }
-  return success;
+  return false;
 }
 
 void TeleClientUDP::inbound()

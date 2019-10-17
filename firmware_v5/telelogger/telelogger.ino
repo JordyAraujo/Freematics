@@ -38,6 +38,10 @@
 #define STATE_WORKING 0x40
 #define STATE_STANDBY 0x100
 
+#define PID_EMISSION_MAF 0xC5 // Added so the calculated values would
+#define PID_EMISSION_MAP 0xC6 // have their own reference to check
+#define FUEL_EFICIENCY 0xC7
+
 typedef struct {
   byte pid;
   byte tier;
@@ -45,16 +49,54 @@ typedef struct {
   uint32_t ts;
 } PID_POLLING_INFO;
 
-PID_POLLING_INFO obdData[]= {
+PID_POLLING_INFO obdData[]= { // Defines which PIDs would be READ
   {PID_SPEED, 1},
   {PID_RPM, 1},
+  {PID_INTAKE_TEMP, 1},
   {PID_THROTTLE, 1},
   {PID_ENGINE_LOAD, 1},
-  {PID_FUEL_PRESSURE, 2},
-  {PID_TIMING_ADVANCE, 2},
-  {PID_COOLANT_TEMP, 3},
-  {PID_INTAKE_TEMP, 3},
+  {PID_RELATIVE_THROTTLE_POS, 1},
+  {PID_MAF_FLOW, 1},
+  {PID_INTAKE_MAP, 1},
 };
+
+typedef struct {
+  byte pid;
+  bool log;
+  char name[20];
+} PID_LIST;
+
+PID_LIST PIDLog[] = { // Defines which PIDs would be LOGGED and their labels on the CSV
+    {PID_SPEED, true, "Speed"},
+    {PID_RPM, true, "RPM"},
+    {PID_INTAKE_TEMP, true, "Intake Temp"},
+    {PID_THROTTLE, true, "Throttle"},
+    {PID_ENGINE_LOAD, true, "Engine Load"},
+    {PID_RELATIVE_THROTTLE_POS, true, "Rel Throttle Pos"},
+    {PID_EMISSION_MAF, true, "Emission MAF"},
+    {PID_MAF_FLOW, true, "MAF Flow"},
+    {PID_EMISSION_MAP, true, "Emission MAP"},
+    {PID_INTAKE_MAP, true, "Intake MAP"},
+    {PID_BATTERY_VOLTAGE, true, "Battery Voltage"},
+    {PID_DEVICE_TEMP, true, "Device Temp"},
+    {PID_AIR_FUEL_EQUIV_RATIO, true, "Air Fuel Ratio"},
+    {FUEL_EFICIENCY, true, "Fuel Efficiency"},
+};
+
+PID_LIST GPSLog[] = { // Defines which GPS PIDs would be LOGGED and their labels on the CSV
+    {PID_GPS_DATE, true, "GPS Date"},
+    {PID_GPS_TIME, true, "GPS Time"},
+    {PID_GPS_LATITUDE, true, "GPS Lat"},
+    {PID_GPS_LONGITUDE, true, "GPS Long"},
+    {PID_GPS_ALTITUDE, true, "GPS Alt"},
+    {PID_GPS_SPEED, true, "GPS Speed"},
+    {PID_GPS_HEADING, true, "GPS Heading"},
+    {PID_GPS_SAT_COUNT, true, "GPS Sat Count"},
+    {PID_GPS_HDOP, true, "GPS HDOP"},
+};
+
+bool shouldOBDLog = SHOULD_OBD_LOG; // Defines whether OBD and
+bool shouldGPSLog = SHOULD_GPS_LOG; // GPS data should be saved on the CSV
 
 CBufferManager bufman;
 Task subtask;
@@ -229,7 +271,57 @@ void processOBD(CBuffer* buffer)
 {
   static int idx[2] = {0, 0};
   int tier = 1;
+
+  // Variables for emission values
+  float emission_maf, emission_map;
+  float calc_maf;
+
+  // Constants for GASOLINE
+  float CO2pl = 2310;       // [g/l]
+  float AFR = 14.7;         // Air fuel Ratio
+  float rho_gasoline = 737; // gasoline density in [g/l]
+
+  // Constants for MAP formula
+  int cil = 1497;              // cilindradas em cm^3
+  int rpm_conversion = 2 * 60; // conversion from minutes to second
+  int cte = 1000;              //
+  float ev = 0.8;              // volumetric efficiency
+  float mma = 28.87;           // air molar mass in [g/mol]
+  float R = 8.3145;            // Ideal gas constant in [J/ mol*K]
+
+  // Constants for Fuel Efficiency
+  float Rair = 287.05           // Specific gas constat for air in [J/ Kg*K]
+
+  int map_value, rpm_value, intake_temp_value_in_K;
+
+  if (shouldOBDLog) { // Prints the first line in the table for OBD then for GPS
+    char Timestamp[10] = "Timestamp";
+    logger.log(Timestamp);
+    for (byte i = 0; i < sizeof(PIDLog) / sizeof(PIDLog[0]); i++)
+    {
+      if (PIDLog[i].log)
+      {
+        logger.log(PIDLog[i].name);
+      }
+    }
+    shouldOBDLog = false;
+  }
+  if (shouldGPSLog)
+  {
+    for (byte i = 0; i < sizeof(GPSLog) / sizeof(GPSLog[0]); i++)
+    {
+      if (GPSLog[i].log)
+      {
+        logger.log(GPSLog[i].name);
+      }
+    }
+    shouldGPSLog = false;
+  }
+
+  logger.timestamp(millis()); // Creates a new line on the table and saves the timestamp
+
   for (byte i = 0; i < sizeof(obdData) / sizeof(obdData[0]); i++) {
+
     if (obdData[i].tier > tier) {
         // reset previous tier index
         idx[tier - 2] = 0;
@@ -244,13 +336,42 @@ void processOBD(CBuffer* buffer)
             continue;
         }
     }
+
     byte pid = obdData[i].pid;
     if (!obd.isValidPID(pid)) continue;
     int value;
     if (obd.readPID(pid, value)) {
         obdData[i].ts = millis();
         obdData[i].value = value;
-        buffer->add((uint16_t)pid | 0x100, value);
+
+        for (byte j = 0; j < sizeof(PIDLog) / sizeof(PIDLog[0]); j++) { // Run through the OBD data 
+        if (obdData[i].pid == PIDLog[j].pid && PIDLog[j].log) {         // and check if it should be printed
+          if (obdData[i].pid == PID_MAF_FLOW) {                         // if so, it's added to the buffer
+            buffer->add((uint16_t)pid | 0x100, value);
+            if(PIDLog[7].log) {
+              emission_maf = obdData[i].value * CO2pl / (AFR * rho_gasoline);
+              buffer->add((uint16_t)pid | 0x200, emission_maf);
+            }
+          } else if (obdData[i].pid == PID_INTAKE_MAP) {
+            buffer->add((uint16_t)pid | 0x100, value);
+
+            if(PIDLog[9].log) {
+              map_value = obdData[i].value;
+              rpm_value = obdData[1].value;                              // rpm is in position 1 of the obdData array
+
+              intake_temp_value_in_K = (float)obdData[2].value + 273.15; // intake_temp is in position 2 of the obdData array
+              calc_maf = (map_value * cil * ev * rpm_value * mma) / (rpm_conversion * R * intake_temp_value_in_K);
+
+              emission_map = calc_maf * CO2pl / (AFR * rho_gasoline * cte);
+
+              buffer->add((uint16_t)pid | 0x200, emission_map);
+            }
+          } else {
+            buffer->add((uint16_t)pid | 0x100, value);
+          }
+        }
+        continue;
+      }
     } else {
         timeoutsOBD++;
         printTimeoutStats();
@@ -258,6 +379,7 @@ void processOBD(CBuffer* buffer)
     }
     if (tier > 1) break;
   }
+
   int kph = obdData[0].value;
   if (kph >= 1) lastMotionTime = millis();
 }
@@ -284,16 +406,34 @@ bool processGPS(CBuffer* buffer)
   if (kph >= 2) lastMotionTime = millis();
 
   if (buffer) {
-    buffer->add(PID_GPS_DATE, gd->date);
-    buffer->add(PID_GPS_TIME, gd->time);
+    if (GPSLog[0].log) {
+      buffer->add(PID_GPS_DATE, gd->date);
+    }
+    if (GPSLog[1].log) {
+      buffer->add(PID_GPS_TIME, gd->time);
+    }
     if (gd->lat && gd->lng && gd->alt) {
-      buffer->add(PID_GPS_LATITUDE, gd->lat);
-      buffer->add(PID_GPS_LONGITUDE, gd->lng);
-      buffer->add(PID_GPS_ALTITUDE, gd->alt); /* m */
-      buffer->add(PID_GPS_SPEED, kph);
-      buffer->add(PID_GPS_HEADING, gd->heading);
-      buffer->add(PID_GPS_SAT_COUNT, gd->sat);
-      buffer->add(PID_GPS_HDOP, gd->hdop);
+      if (GPSLog[2].log) {
+        buffer->add(PID_GPS_LATITUDE, gd->lat);
+      }
+      if (GPSLog[3].log) {
+        buffer->add(PID_GPS_LONGITUDE, gd->lng);
+      }
+      if (GPSLog[4].log) {
+        buffer->add(PID_GPS_ALTITUDE, gd->alt); /* m */
+      }
+      if (GPSLog[5].log) {
+        buffer->add(PID_GPS_SPEED, kph);
+      }
+      if (GPSLog[6].log) {
+        buffer->add(PID_GPS_HEADING, gd->heading);
+      }
+      if (GPSLog[7].log) {
+        buffer->add(PID_GPS_SAT_COUNT, gd->sat);
+      }
+      if (GPSLog[8].log) {
+        buffer->add(PID_GPS_HDOP, gd->hdop);
+      }
     }
   }
   
@@ -745,13 +885,15 @@ void process()
 #endif
 
 #if ENABLE_OBD
-  if (sys.version > 12) {
-    batteryVoltage = (float)(analogRead(A0) * 11 * 370) / 4095;
-  } else {
-    batteryVoltage = obd.getVoltage() * 100;
-  }
-  if (batteryVoltage) {
-    buffer->add(PID_BATTERY_VOLTAGE, (int)batteryVoltage);
+  if(PIDLog[11].log) {
+    if (sys.version > 12) {
+      batteryVoltage = (float)(analogRead(A0) * 11 * 370) / 4095;
+    } else {
+      batteryVoltage = obd.getVoltage() * 100;
+    }
+    if (batteryVoltage) {
+      buffer->add(PID_BATTERY_VOLTAGE, (float)batteryVoltage/100);
+    }
   }
 #endif
 
@@ -763,13 +905,11 @@ void process()
   processMEMS(buffer);
 #endif
 
-  processGPS(buffer);
-
   if (!state.check(STATE_MEMS_READY)) {
     deviceTemp = readChipTemperature();
-    buffer->add(PID_DEVICE_TEMP, deviceTemp);
+    if(PIDLog[11].log) buffer->add(PID_DEVICE_TEMP, deviceTemp);
   }
-
+  processGPS(buffer);
   buffer->timestamp = millis();
   buffer->state = BUFFER_STATE_FILLED;
 
@@ -824,9 +964,9 @@ bool initNetwork()
   if (teleClient.net.begin(&sys)) {
     state.set(STATE_NET_READY);
   } else {
-    Serial.println("CELL:NO");
+    Serial.println("No Net Module");
 #if ENABLE_OLED
-    oled.println("No Cell Module");
+    oled.println("No Net Module");
 #endif
     return false;
   }
@@ -837,13 +977,13 @@ bool initNetwork()
     oled.print("IMEI:");
     oled.println(teleClient.net.IMEI);
 #endif
-  Serial.print("CELL:");
-  Serial.println(teleClient.net.deviceName());
   if (!teleClient.net.checkSIM(SIM_CARD_PIN)) {
-    Serial.println("NO SIM CARD");
+    Serial.print(teleClient.net.deviceName());
+    Serial.println(" NO SIM");
     return false;
   }
-  Serial.print("IMEI:");
+  Serial.print(teleClient.net.deviceName());
+  Serial.print(" IMEI:");
   Serial.println(teleClient.net.IMEI);
   if (state.check(STATE_NET_READY) && !state.check(STATE_NET_CONNECTED)) {
     bool extGPS = state.check(STATE_GPS_READY);
@@ -1001,41 +1141,37 @@ void telemetry(void* inst)
 
       store.purge();
 
-#if ENABLE_OBD || ENABLE_GPS || MEMS_MODE
-      // motion adaptive data transmission interval control
-      unsigned int motionless = (millis() - lastMotionTime) / 1000;
-      int sendingInterval = -1;
-      for (byte i = 0; i < sizeof(stationaryTime) / sizeof(stationaryTime[0]); i++) {
-        if (motionless < stationaryTime[i] || stationaryTime[i] == 0) {
-          sendingInterval = sendingIntervals[i];
-          break;
-        }
-      }
-      if (sendingInterval == -1) {
-        // stationery timeout, trip ended
-        Serial.print("Stationary for ");
-        Serial.print(motionless);
-        Serial.println(" secs");
-        //teleClient.reset();
-        state.clear(STATE_WORKING);
-        break;
-      }
-      while (state.check(STATE_WORKING)) {
-        // network inbound reception
-        teleClient.inbound();
-        // maintain interval
-        int n = startTime + sendingInterval - millis();
-        if (n <= 0) break;
-        waitMotion(min(n, 1000));
-      }
-#else
-      teleClient.inbound();
-#endif
       if (syncInterval > 10000 && millis() - teleClient.lastSyncTime > syncInterval) {
         Serial.println("Instable connection");
         connErrors++;
         timeoutsNet++;
       }
+
+#if ENABLE_OBD || ENABLE_GPS || MEMS_MODE
+      // motion adaptive data transmission interval control
+      while (state.check(STATE_WORKING)) {
+        unsigned int motionless = (millis() - lastMotionTime) / 1000;
+        int sendingInterval = -1;
+        for (byte i = 0; i < sizeof(stationaryTime) / sizeof(stationaryTime[0]); i++) {
+          if (motionless < stationaryTime[i] || stationaryTime[i] == 0) {
+            sendingInterval = sendingIntervals[i];
+            break;
+          }
+        }
+        if (sendingInterval == -1) {
+          // stationery timeout, trip ended
+          Serial.print("Stationary for ");
+          Serial.print(motionless);
+          Serial.println(" secs");
+          //teleClient.reset();
+          state.clear(STATE_WORKING);
+          break;
+        }
+        int n = startTime + sendingInterval - millis();
+        if (n <= 0) break;
+        waitMotion(min(n, 3000));
+      }
+#endif
       if (connErrors > MAX_CONN_ERRORS_RECONNECT) {
         teleClient.net.close();
         if (!teleClient.connect()) {

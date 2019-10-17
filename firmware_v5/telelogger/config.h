@@ -2,10 +2,17 @@
 #define CONFIG_H_INCLUDED
 
 /**************************************
+* CSV Logging Configuration
+**************************************/
+
+#define SHOULD_OBD_LOG true
+#define SHOULD_GPS_LOG true
+
+/**************************************
 * Circular Buffer Configuration
 **************************************/
-#define BUFFER_SLOTS 32 /* max number of buffer */
-#define BUFFER_LENGTH 128 /* bytes per slot */
+#define BUFFER_SLOTS 32 /* max number of buffer slots to be saved */
+#define BUFFER_LENGTH 128 /* bytes per each saved slot */
 #define SERIALIZE_BUFFER_SIZE 1024 /* bytes */
 
 /**************************************
@@ -48,12 +55,12 @@
 **************************************/
 #ifndef NET_DEVICE
 // change the following line to change network device
-#define NET_DEVICE NET_SIM7600
+#define NET_DEVICE NET_WIFI
 // WiFi settings
-#define WIFI_SSID "SSID"
-#define WIFI_PASSWORD "PASSWORD"
+#define WIFI_SSID "jordy"
+#define WIFI_PASSWORD "roteador"
 // cellular network settings
-#define CELL_APN ""
+#define CELL_APN "tim.brasil.br"
 // Freematics Hub server settings
 #define SERVER_HOST "hub.freematics.com"
 #define SERVER_PROTOCOL PROTOCOL_UDP
@@ -91,9 +98,9 @@
 // expected maximum server sync signal interval
 #define SERVER_SYNC_INTERVAL 120 /* seconds, 0 to disable */
 // data interval configurations
-#define STATIONARY_TIME_TABLE {30, 60, 180} /* seconds */
-#define SENDING_INTERVAL_TABLE {0, 2000, 5000} /* ms */
-#define DATASET_INTERVAL 200
+#define STATIONARY_TIME_TABLE {30, 60, 180} /* seconds */ // The interval to send data to the server will be defined by the stationary time. If the car is
+#define SENDING_INTERVAL_TABLE {0, 2000, 5000} /* ms */   // stationary for t < 30s, the sending interval would be 0. If 30 < t < 60, it will be 2000, and so on.
+#define DATASET_INTERVAL 200 // Interval for each dataset to be saved (it actually calls a delay function every DATASET_INTERVAL seconds)
 #define PING_BACK_INTERVAL 900 /* seconds */
 
 /**************************************
