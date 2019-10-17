@@ -23,21 +23,17 @@ private:
     char m_buffer[128] = {0};
 };
 
-#define MESH_RECV_BUF_SIZE 256
-
 class ClientWiFiMesh
 {
 public:
-    ClientWiFiMesh();
-    ~ClientWiFiMesh();
     bool begin(CFreematics* device);
     void end() {}
-    bool open(const char* host, uint16_t port);
+    bool open(const char* host, uint16_t port) { return true; }
     void close() {}
     bool send(const char* data, unsigned int len);
     char* receive(int* pbytes = 0, unsigned int timeout = 5000);
     const char* deviceName() { return "WiFi Mesh"; }
 private:
-    char* m_buffer;
+    char m_buffer[128] = {0};
     bool m_inited = false;
 };
