@@ -58,6 +58,7 @@ PID_POLLING_INFO obdData[]= { // Defines which PIDs would be READ
   {PID_RELATIVE_THROTTLE_POS, 1},
   {PID_MAF_FLOW, 1},
   {PID_INTAKE_MAP, 1},
+  {PID_AIR_FUEL_EQUIV_RATIO, 1},
 };
 
 typedef struct {
@@ -289,10 +290,13 @@ void processOBD(CBuffer* buffer)
   float mma = 28.87;           // air molar mass in [g/mol]
   float R = 8.3145;            // Ideal gas constant in [J/ mol*K]
 
-  // Constants for Fuel Efficiency
-  float Rair = 287.05           // Specific gas constat for air in [J/ Kg*K]
+  // Constants and Variables for Fuel Efficiency
+  float Rair = 287.05;         // Specific gas constat for air in [J/ Kg*K]
+  float FC;
 
-  int map_value, rpm_value, intake_temp_value_in_K;
+  int rpm_value = obdData[1].value;                              // rpm is in position 1 of the obdData array
+  int intake_temp_value_in_K = (float)obdData[2].value + 273.15; // intake_temp is in position 2 of the obdData array
+  float air_fuel_rate = (float)obdData[8].value;
 
   if (shouldOBDLog) { // Prints the first line in the table for OBD then for GPS
     char Timestamp[10] = "Timestamp";
@@ -337,6 +341,12 @@ void processOBD(CBuffer* buffer)
         }
     }
 
+    /*
+      Checar a impressão da tabela. Ambos MAP e MAF devem ser impressos (calculados quando não houver).
+      Checar os valores da equação do Fuel Consumption e do Lambda.
+      Checar se o valor do PID 0x44 é o lambda ou o FAR já calculado FAR = (1 / (14.7 * lambda)).
+    */
+
     byte pid = obdData[i].pid;
     if (!obd.isValidPID(pid)) continue;
     int value;
@@ -344,7 +354,7 @@ void processOBD(CBuffer* buffer)
         obdData[i].ts = millis();
         obdData[i].value = value;
 
-        for (byte j = 0; j < sizeof(PIDLog) / sizeof(PIDLog[0]); j++) { // Run through the OBD data 
+        for (byte j = 0; j < sizeof(PIDLog) / sizeof(PIDLog[0]); j++) { // Run through every OBD data 
         if (obdData[i].pid == PIDLog[j].pid && PIDLog[j].log) {         // and check if it should be printed
           if (obdData[i].pid == PID_MAF_FLOW) {                         // if so, it's added to the buffer
             buffer->add((uint16_t)pid | 0x100, value);
@@ -356,11 +366,8 @@ void processOBD(CBuffer* buffer)
             buffer->add((uint16_t)pid | 0x100, value);
 
             if(PIDLog[9].log) {
-              map_value = obdData[i].value;
-              rpm_value = obdData[1].value;                              // rpm is in position 1 of the obdData array
 
-              intake_temp_value_in_K = (float)obdData[2].value + 273.15; // intake_temp is in position 2 of the obdData array
-              calc_maf = (map_value * cil * ev * rpm_value * mma) / (rpm_conversion * R * intake_temp_value_in_K);
+              calc_maf = (value * cil * ev * rpm_value * mma) / (rpm_conversion * R * intake_temp_value_in_K);
 
               emission_map = calc_maf * CO2pl / (AFR * rho_gasoline * cte);
 
@@ -379,6 +386,35 @@ void processOBD(CBuffer* buffer)
     }
     if (tier > 1) break;
   }
+
+//          if(!PIDLog[9].log && PIDLog[11].log) {
+//            FC = ev * cil * rpm_value * obdData[6].value * cte / (2 * CO2pl * Rair * rho_gasoline * air_fuel_rate * intake_temp_value_in_K);
+//            buffer->add((uint16_t)FUEL_EFICIENCY | 0x100, FC);
+//          }
+//          if(PIDLog[11].log) {
+
+              Serial.print("ev = ");
+              Serial.println((float)ev);
+              Serial.print("cil = ");
+              Serial.println((float)cil);
+              Serial.print("rpm_value = ");
+              Serial.println((float)rpm_value);
+              Serial.print("obdData[7].value = ");
+              Serial.println((float)obdData[7].value);
+              Serial.print("AFR = ");
+              Serial.println((float)AFR);
+              Serial.print("Rair = ");
+              Serial.println((float)Rair);
+              Serial.print("rho_gasoline = ");
+              Serial.println((float)rho_gasoline);
+              Serial.print("air_fuel_rate = ");
+              Serial.println((float)air_fuel_rate);
+              Serial.print("intake_temp_value_in_K = ");
+              Serial.println((float)intake_temp_value_in_K);
+
+              FC = ev * cil * rpm_value * obdData[7].value / (2 * AFR * Rair * rho_gasoline * air_fuel_rate * intake_temp_value_in_K);
+              buffer->add((uint16_t)FUEL_EFICIENCY | 0x100, FC);
+//         
 
   int kph = obdData[0].value;
   if (kph >= 1) lastMotionTime = millis();
@@ -885,7 +921,7 @@ void process()
 #endif
 
 #if ENABLE_OBD
-  if(PIDLog[11].log) {
+  if(PIDLog[12].log) {
     if (sys.version > 12) {
       batteryVoltage = (float)(analogRead(A0) * 11 * 370) / 4095;
     } else {
@@ -907,7 +943,7 @@ void process()
 
   if (!state.check(STATE_MEMS_READY)) {
     deviceTemp = readChipTemperature();
-    if(PIDLog[11].log) buffer->add(PID_DEVICE_TEMP, deviceTemp);
+    if(PIDLog[13].log) buffer->add(PID_DEVICE_TEMP, deviceTemp);
   }
   processGPS(buffer);
   buffer->timestamp = millis();

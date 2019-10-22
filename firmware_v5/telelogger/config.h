@@ -6,7 +6,7 @@
 **************************************/
 
 #define SHOULD_OBD_LOG true
-#define SHOULD_GPS_LOG true
+#define SHOULD_GPS_LOG false
 
 /**************************************
 * Circular Buffer Configuration
