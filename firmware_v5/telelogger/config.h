@@ -48,12 +48,12 @@
 **************************************/
 #ifndef NET_DEVICE
 // change the following line to change network device
-#define NET_DEVICE NET_SIM7600
+#define NET_DEVICE NET_WIFI
 // WiFi settings
-#define WIFI_SSID "SSID"
-#define WIFI_PASSWORD "PASSWORD"
+#define WIFI_SSID "jordy"
+#define WIFI_PASSWORD "roteador"
 // cellular network settings
-#define CELL_APN ""
+#define CELL_APN "tim.brasil.br"
 // Freematics Hub server settings
 #define SERVER_HOST "hub.freematics.com"
 #define SERVER_PROTOCOL PROTOCOL_UDP
