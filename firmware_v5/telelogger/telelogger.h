@@ -3,6 +3,32 @@
 #include <SD.h>
 #include <SPIFFS.h>
 
+class Calculations {
+    private:
+        int cil = 1497;
+        float ev = 0.8;
+        float mma = 28.87;
+        int rpm_conversion = 2 * 60;
+        float R = 8.3145;
+        float CO2pl = 2310;
+        float AFR = 14.7;
+        float rho_gasoline = 737;
+        int cte = 1000; 
+    public:
+        float Emission_MAF(int MAF_Flow)
+        {
+            return (MAF_Flow * CO2pl / (AFR * rho_gasoline));
+        }
+        float MAF(int map_value, int rpm_value, int intake_temp_value_in_K)
+        {
+            return (map_value * cil * ev * rpm_value * mma) / (rpm_conversion * R * intake_temp_value_in_K);
+        }
+        float Emission_MAP(float calc_maf)
+        {
+            return (calc_maf * CO2pl / (AFR * rho_gasoline * cte));
+        }
+};
+
 class CStorage;
 
 class CStorage {

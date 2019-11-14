@@ -266,6 +266,7 @@ int handlerControl(UrlHandlerParam* param)
 #if ENABLE_OBD
 void processOBD(CBuffer* buffer)
 {
+  Calculations calc;
   static int idx[2] = {0, 0};
   int tier = 1;
 
@@ -343,7 +344,7 @@ void processOBD(CBuffer* buffer)
           if (obdData[i].pid == PID_MAF_FLOW) {                         // if so, it's added to the buffer
             buffer->add((uint16_t)pid | 0x100, value);
             if(PIDLog[7].log) {
-              emission_maf = obdData[i].value * CO2pl / (AFR * rho_gasoline);
+              emission_maf = calc.Emission_MAF(obdData[i].value);
               buffer->add((uint16_t)pid | 0x200, emission_maf);
             }
           } else if (obdData[i].pid == PID_INTAKE_MAP) {
@@ -354,9 +355,9 @@ void processOBD(CBuffer* buffer)
               rpm_value = obdData[1].value;                              // rpm is in position 1 of the obdData array
 
               intake_temp_value_in_K = (float)obdData[2].value + 273.15; // intake_temp is in position 2 of the obdData array
-              calc_maf = (map_value * cil * ev * rpm_value * mma) / (rpm_conversion * R * intake_temp_value_in_K);
+              calc_maf = calc.MAF(map_value, rpm_value, intake_temp_value_in_K);
 
-              emission_map = calc_maf * CO2pl / (AFR * rho_gasoline * cte);
+              emission_map = calc.Emission_MAP(calc_maf);
 
               buffer->add((uint16_t)pid | 0x200, emission_map);
             }
