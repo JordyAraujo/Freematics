@@ -3,39 +3,90 @@
 #include <SD.h>
 #include <SPIFFS.h>
 
+class Calculations {
+    private:
+        int cil = 1497;
+        float ev = 0.8;
+        float mma = 28.87;
+        int rpm_conversion = 2 * 60;
+        float R = 8.3145;
+        float CO2pl = 2310;
+        float AFR = 14.7;
+        float rho_gasoline = 737;
+        int cte = 1000; 
+    public:
+        float Emission_MAF(int MAF_Flow)
+        {
+            return (MAF_Flow * CO2pl / (AFR * rho_gasoline));
+        }
+        float MAF(int map_value, int rpm_value, int intake_temp_value_in_K)
+        {
+            return (map_value * cil * ev * rpm_value * mma) / (rpm_conversion * R * intake_temp_value_in_K);
+        }
+        float Emission_MAP(float calc_maf)
+        {
+            return (calc_maf * CO2pl / (AFR * rho_gasoline * cte));
+        }
+        float Fuel_Consumption(int speed, int fuel_flow)
+        {
+            return speed / fuel_flow;
+        }
+        float Fuel_Consumption(int speed, float fuel_flow)
+        {
+            return (speed / fuel_flow);
+        }
+};
+
 class CStorage;
 
 class CStorage {
 public:
     virtual bool init() { return true; }
     virtual void uninit() {}
+
+    virtual void log(char * name) //Used to print the table header
+    {
+        char buf[1000];
+        byte len = sprintf(buf, "%s:", name);
+        dispatch(buf, len);
+    }
+
     virtual void log(uint16_t pid, int value)
     {
         char buf[24];
-        byte len = sprintf(buf, "%X%c%d", pid, m_delimiter, value);
+        byte len = sprintf(buf, "%d:", value);
         dispatch(buf, len);
     }
     virtual void log(uint16_t pid, uint32_t value)
     {
         char buf[24];
-        byte len = sprintf(buf, "%X%c%u", pid, m_delimiter, value);
-        dispatch(buf, len);
-    }
-    virtual void log(uint16_t pid, float value)
-    {
-        char buf[24];
-        byte len = sprintf(buf, "%X%c%f", pid, m_delimiter, value);
+        byte len = sprintf(buf, "%u:", value);
         dispatch(buf, len);
     }
     virtual void log(uint16_t pid, float value[])
     {
         char buf[48];
-        byte len = sprintf(buf, "%X%c%.2f;%.2f;%.2f", pid, m_delimiter, value[0], value[1], value[2]);
+        byte len = sprintf(buf, "%.2f;%.2f;%.2f:", value[0], value[1], value[2]);
         dispatch(buf, len);
     }
-    virtual void timestamp(uint32_t ts)
+    virtual void log(uint16_t pid, float value)
     {
-        log(0, ts);
+        char buf[48];
+        byte len = sprintf(buf, "%f:", value);
+        dispatch(buf, len);
+    }
+    virtual void timestamp(uint32_t ts) //Prints timestamp with the format h:m:s:ms. Also creates a new table line
+    {
+        char buf[24];
+        uint32_t t = ts;
+        long h = t / 3600000;
+        t = t % 3600000;
+        int m = t / 60000;
+        t = t % 60000;
+        int s = t / 1000;
+        int ms = t % 1000;
+        byte len = sprintf(buf, "\n%02ldh %02dm %02ds %02dms:", h, m, s, ms);
+        dispatch(buf, len);
     }
     virtual void purge() { m_samples = 0; }
     virtual uint16_t samples() { return m_samples; }
@@ -133,7 +184,6 @@ public:
                 return;
             }
         }
-        m_file.write('\n');
         m_size += (len + 1);
     }
     virtual uint32_t size()

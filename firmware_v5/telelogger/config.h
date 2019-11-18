@@ -2,6 +2,13 @@
 #define CONFIG_H_INCLUDED
 
 /**************************************
+* CSV Logging Configuration
+**************************************/
+
+#define SHOULD_OBD_LOG true
+#define SHOULD_GPS_LOG false
+
+/**************************************
 * Circular Buffer Configuration
 **************************************/
 #define BUFFER_SLOTS 32 /* max number of buffer */
@@ -50,8 +57,8 @@
 // change the following line to change network device
 #define NET_DEVICE NET_WIFI
 // WiFi settings
-#define WIFI_SSID "jordy"
-#define WIFI_PASSWORD "roteador"
+#define WIFI_SSID "LII"
+#define WIFI_PASSWORD "industri@40"
 // cellular network settings
 #define CELL_APN "tim.brasil.br"
 // Freematics Hub server settings
